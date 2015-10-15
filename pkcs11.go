@@ -23,8 +23,10 @@ package pkcs11
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <ltdl.h>
 #include <unistd.h>
+#include <time.h>
 #include "pkcs11.h"
 
 struct ctx {
@@ -470,6 +472,9 @@ CK_RV SignInit(struct ctx * c, CK_SESSION_HANDLE session,
 CK_RV Sign(struct ctx * c, CK_SESSION_HANDLE session, CK_BYTE_PTR message,
 	   CK_ULONG mlen, CK_BYTE_PTR * sig, CK_ULONG_PTR siglen)
 {
+	// begin timing operation
+	struct timespec start, end, diff, questionable;
+	clock_gettime(CLOCK_MONOTONIC, &start);
 	CK_RV rv = c->sym->C_Sign(session, message, mlen, NULL, siglen);
 	if (rv != CKR_OK) {
 		return rv;
@@ -479,6 +484,14 @@ CK_RV Sign(struct ctx * c, CK_SESSION_HANDLE session, CK_BYTE_PTR message,
 		return CKR_HOST_MEMORY;
 	}
 	rv = c->sym->C_Sign(session, message, mlen, *sig, siglen);
+	// end timing operation
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	diff.tv_nsec = end.tv_nsec - start.tv_nsec;
+	// if operation took < 1/350 s sleep for the diff
+	if (diff.tv_nsec < ((1/350)*1000000000)) {
+		diff.tv_nsec = ((1/350)*1000000000) - diff.tv_nsec;
+		nanosleep(&diff, &questionable);
+	}
 	return rv;
 }
 
